@@ -7,12 +7,12 @@ import { motion } from "framer-motion";
 const socket = io("http://localhost:5001");
 
 export default function Home() {
-  const [board, setBoard] = useState(Array(9).fill(null));
+  const [board, setBoard] = useState<(string | null)[]>(Array(9).fill(null));
   const [isXTurn, setIsXTurn] = useState(true);
   const [winner, setWinner] = useState<string | null>(null);
   const [winningLine, setWinningLine] = useState<number[] | null>(null);
   const [isPlayingAI, setIsPlayingAI] = useState(false);
-  const [isDraw, setIsDraw] = useState(false); // ✅ Track draw condition
+  const [isDraw, setIsDraw] = useState(false);
 
   useEffect(() => {
     socket.on("boardUpdate", ({ board, isXTurn }) => {
@@ -22,7 +22,7 @@ export default function Home() {
       if (result) {
         setWinner(result.winner);
         setWinningLine(result.line);
-      } else if (board.every(cell => cell !== null)) {
+      } else if (board.every((cell) => cell !== null)) {
         handleDraw();
       }
     });
@@ -51,7 +51,7 @@ export default function Home() {
     if (result) {
       setWinner(result.winner);
       setWinningLine(result.line);
-    } else if (newBoard.every(cell => cell !== null)) {
+    } else if (newBoard.every((cell) => cell !== null)) {
       handleDraw();
     }
 
@@ -62,14 +62,14 @@ export default function Home() {
     setIsDraw(true);
     setTimeout(() => {
       resetGame();
-    }, 3000); // 🔄 Auto-reset after 3 seconds
+    }, 3000);
   };
 
-  const checkWinner = (board: string[]) => {
+  const checkWinner = (board: (string | null)[]) => {
     const winningCombos = [
-      [0, 1, 2], [3, 4, 5], [6, 7, 8], // Rows
-      [0, 3, 6], [1, 4, 7], [2, 5, 8], // Columns
-      [0, 4, 8], [2, 4, 6] // Diagonals
+      [0, 1, 2], [3, 4, 5], [6, 7, 8], 
+      [0, 3, 6], [1, 4, 7], [2, 5, 8], 
+      [0, 4, 8], [2, 4, 6] 
     ];
     for (let line of winningCombos) {
       const [a, b, c] = line;
@@ -80,13 +80,13 @@ export default function Home() {
     return null;
   };
 
-  const getBestMove = (board: string[]) => {
+  const getBestMove = (board: (string | null)[]) => {
     let bestScore = -Infinity;
     let move = -1;
     board.forEach((cell, index) => {
       if (!cell) {
         board[index] = "O";
-        let score = minimax(board, 0, false);
+        let score = minimax(board, 0, false, -Infinity, Infinity);
         board[index] = null;
         if (score > bestScore) {
           bestScore = score;
@@ -97,32 +97,36 @@ export default function Home() {
     return move;
   };
 
-  const minimax = (board: string[], depth: number, isMaximizing: boolean) => {
+  const minimax = (board: (string | null)[], depth: number, isMaximizing: boolean, alpha: number, beta: number) => {
     const result = checkWinner(board);
     if (result) return result.winner === "O" ? 10 - depth : -10 + depth;
-    if (board.every(cell => cell !== null)) return 0;
+    if (board.every((cell) => cell !== null)) return 0;
 
     if (isMaximizing) {
       let bestScore = -Infinity;
-      board.forEach((cell, index) => {
-        if (!cell) {
-          board[index] = "O";
-          let score = minimax(board, depth + 1, false);
-          board[index] = null;
+      for (let i = 0; i < board.length; i++) {
+        if (!board[i]) {
+          board[i] = "O";
+          let score = minimax(board, depth + 1, false, alpha, beta);
+          board[i] = null;
           bestScore = Math.max(score, bestScore);
+          alpha = Math.max(alpha, score);
+          if (beta <= alpha) break;
         }
-      });
+      }
       return bestScore;
     } else {
       let bestScore = Infinity;
-      board.forEach((cell, index) => {
-        if (!cell) {
-          board[index] = "X";
-          let score = minimax(board, depth + 1, true);
-          board[index] = null;
+      for (let i = 0; i < board.length; i++) {
+        if (!board[i]) {
+          board[i] = "X";
+          let score = minimax(board, depth + 1, true, alpha, beta);
+          board[i] = null;
           bestScore = Math.min(score, bestScore);
+          beta = Math.min(beta, score);
+          if (beta <= alpha) break;
         }
-      });
+      }
       return bestScore;
     }
   };
