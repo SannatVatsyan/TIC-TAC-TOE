@@ -12,24 +12,19 @@ export default function Home() {
   const [winner, setWinner] = useState<string | null>(null);
   const [winningLine, setWinningLine] = useState<number[] | null>(null);
   const [isPlayingAI, setIsPlayingAI] = useState(false);
+  const [difficulty, setDifficulty] = useState<string | null>(null);
   const [isDraw, setIsDraw] = useState(false);
 
   useEffect(() => {
     socket.on("boardUpdate", ({ board, isXTurn }) => {
       setBoard(board);
       setIsXTurn(isXTurn);
-      const result = checkWinner(board);
-      if (result) {
-        setWinner(result.winner);
-        setWinningLine(result.line);
-      } else if (board.every((cell) => cell !== null)) {
-        handleDraw();
-      }
+      checkGameState(board);
     });
   }, []);
 
   useEffect(() => {
-    if (isPlayingAI && !isXTurn && !winner) {
+    if (isPlayingAI && difficulty && !isXTurn && !winner) {
       const bestMove = getBestMove(board);
       if (bestMove !== -1) {
         setTimeout(() => {
@@ -37,7 +32,17 @@ export default function Home() {
         }, 500);
       }
     }
-  }, [isXTurn, isPlayingAI, board]);
+  }, [isXTurn, isPlayingAI, difficulty, board]);
+
+  const checkGameState = (board: (string | null)[]) => {
+    const result = checkWinner(board);
+    if (result) {
+      setWinner(result.winner);
+      setWinningLine(result.line);
+    } else if (board.every((cell) => cell !== null)) {
+      handleDraw();
+    }
+  };
 
   const handleClick = (index: number, isAI = false) => {
     if (board[index] || winner || isDraw || (isPlayingAI && !isAI && !isXTurn)) return;
@@ -47,14 +52,7 @@ export default function Home() {
     setBoard(newBoard);
     setIsXTurn(!isXTurn);
 
-    const result = checkWinner(newBoard);
-    if (result) {
-      setWinner(result.winner);
-      setWinningLine(result.line);
-    } else if (newBoard.every((cell) => cell !== null)) {
-      handleDraw();
-    }
-
+    checkGameState(newBoard);
     socket.emit("move", { index });
   };
 
@@ -81,54 +79,43 @@ export default function Home() {
   };
 
   const getBestMove = (board: (string | null)[]) => {
-    let bestScore = -Infinity;
-    let move = -1;
-    board.forEach((cell, index) => {
-      if (!cell) {
-        board[index] = "O";
-        let score = minimax(board, 0, false, -Infinity, Infinity);
-        board[index] = null;
-        if (score > bestScore) {
-          bestScore = score;
-          move = index;
-        }
-      }
-    });
-    return move;
+    if (difficulty === "Easy") {
+      const emptyCells = board.map((cell, index) => (cell === null ? index : null)).filter((i) => i !== null);
+      return emptyCells.length ? emptyCells[Math.floor(Math.random() * emptyCells.length)] as number : -1;
+    }
+
+    if (difficulty === "Medium") {
+      return minimax(board, 0, false, -Infinity, Infinity).index;
+    }
+
+    return minimax(board, 0, true, -Infinity, Infinity).index; 
   };
 
   const minimax = (board: (string | null)[], depth: number, isMaximizing: boolean, alpha: number, beta: number) => {
     const result = checkWinner(board);
-    if (result) return result.winner === "O" ? 10 - depth : -10 + depth;
-    if (board.every((cell) => cell !== null)) return 0;
+    if (result) return { score: result.winner === "O" ? 10 - depth : -10 + depth, index: -1 };
+    if (board.every((cell) => cell !== null)) return { score: 0, index: -1 };
 
-    if (isMaximizing) {
-      let bestScore = -Infinity;
-      for (let i = 0; i < board.length; i++) {
-        if (!board[i]) {
-          board[i] = "O";
-          let score = minimax(board, depth + 1, false, alpha, beta);
-          board[i] = null;
-          bestScore = Math.max(score, bestScore);
-          alpha = Math.max(alpha, score);
-          if (beta <= alpha) break;
+    let bestMove = isMaximizing ? { score: -Infinity, index: -1 } : { score: Infinity, index: -1 };
+
+    for (let i = 0; i < board.length; i++) {
+      if (!board[i]) {
+        board[i] = isMaximizing ? "O" : "X";
+        const move = minimax(board, depth + 1, !isMaximizing, alpha, beta);
+        board[i] = null;
+
+        if (isMaximizing) {
+          if (move.score > bestMove.score) bestMove = { score: move.score, index: i };
+          alpha = Math.max(alpha, move.score);
+        } else {
+          if (move.score < bestMove.score) bestMove = { score: move.score, index: i };
+          beta = Math.min(beta, move.score);
         }
+        if (beta <= alpha) break;
       }
-      return bestScore;
-    } else {
-      let bestScore = Infinity;
-      for (let i = 0; i < board.length; i++) {
-        if (!board[i]) {
-          board[i] = "X";
-          let score = minimax(board, depth + 1, true, alpha, beta);
-          board[i] = null;
-          bestScore = Math.min(score, bestScore);
-          beta = Math.min(beta, score);
-          if (beta <= alpha) break;
-        }
-      }
-      return bestScore;
     }
+
+    return bestMove;
   };
 
   const resetGame = () => {
@@ -136,6 +123,7 @@ export default function Home() {
     setWinner(null);
     setWinningLine(null);
     setIsDraw(false);
+    setDifficulty(null);
     socket.emit("reset");
   };
 
@@ -149,6 +137,7 @@ export default function Home() {
           className={`px-4 py-2 rounded-lg ${!isPlayingAI ? "bg-blue-600" : "bg-gray-600"} hover:bg-blue-800`}
           onClick={() => {
             setIsPlayingAI(false);
+            setDifficulty(null);
             resetGame();
           }}
         >
@@ -158,6 +147,7 @@ export default function Home() {
           className={`px-4 py-2 rounded-lg ${isPlayingAI ? "bg-blue-600" : "bg-gray-600"} hover:bg-blue-800`}
           onClick={() => {
             setIsPlayingAI(true);
+            setDifficulty(null);
             resetGame();
           }}
         >
@@ -165,53 +155,51 @@ export default function Home() {
         </button>
       </div>
 
-      {/* Game Board */}
-      <motion.div 
-        className="grid grid-cols-3 gap-4 bg-gray-700 p-6 rounded-lg shadow-lg"
-        initial={{ opacity: 0, scale: 0.8 }} 
-        animate={{ opacity: 1, scale: 1 }} 
-        transition={{ duration: 0.5 }}
-      >
-        {board.map((cell, index) => (
-          <motion.button
-            key={index}
-            className={`w-24 h-24 flex items-center justify-center text-7xl font-extrabold border-2 border-gray-400 rounded-md transition-all duration-300 bg-gray-800 hover:bg-gray-600 
-              ${winningLine?.includes(index) ? "bg-green-500 text-white" : ""}`}
-            whileTap={{ scale: 0.9 }}
-            onClick={() => handleClick(index)}
+      {/* Difficulty Selection */}
+      {isPlayingAI && difficulty === null && (
+        <div className="mb-4">
+          <label className="mr-4">Select AI Difficulty:</label>
+          <select
+            className="px-4 py-2 bg-gray-800 text-white rounded-lg"
+            value={difficulty || ""}
+            onChange={(e) => setDifficulty(e.target.value)}
           >
-            {cell}
-          </motion.button>
-        ))}
-      </motion.div>
+            <option value="">--Select--</option>
+            <option value="Easy">Easy</option>
+            <option value="Medium">Medium</option>
+            <option value="Hard">Hard</option>
+          </select>
+        </div>
+      )}
 
-      {/* Winner or Draw Display */}
-      {winner && (
+      {/* Game Board */}
+      {(difficulty !== null || !isPlayingAI) && (
         <motion.div 
-          className="mt-6 text-3xl font-semibold text-green-400"
-          initial={{ opacity: 0 }} 
-          animate={{ opacity: 1 }} 
+          className="grid grid-cols-3 gap-4 bg-gray-700 p-6 rounded-lg shadow-lg"
+          initial={{ opacity: 0, scale: 0.8 }} 
+          animate={{ opacity: 1, scale: 1 }} 
           transition={{ duration: 0.5 }}
         >
-          🎉 Winner: {winner} 🎉
+          {board.map((cell, index) => (
+            <motion.button
+              key={index}
+              className={`w-24 h-24 flex items-center justify-center text-7xl font-extrabold border-2 border-gray-400 rounded-md transition-all duration-300 bg-gray-800 hover:bg-gray-600 ${
+                winningLine?.includes(index) ? "bg-green-500 text-white" : ""
+              }`}
+              onClick={() => handleClick(index)}
+            >
+              {cell}
+            </motion.button>
+          ))}
         </motion.div>
       )}
-      {isDraw && (
-        <motion.div 
-          className="mt-6 text-3xl font-semibold text-yellow-400"
-          initial={{ opacity: 0 }} 
-          animate={{ opacity: 1 }} 
-          transition={{ duration: 0.5 }}
-        >
-          😔 Sorry, better luck next time!
-        </motion.div>
-      )}
+
+      {/* Winner & Draw Message */}
+      {winner && <p className="mt-4 text-3xl text-green-400">🎉 Winner: {winner} 🎉</p>}
+      {isDraw && <p className="mt-4 text-3xl text-yellow-400">😔 Better luck next time!</p>}
 
       {/* Restart Button */}
-      <button 
-        className="mt-6 px-6 py-3 bg-red-600 hover:bg-red-800 text-white rounded-lg text-lg font-semibold shadow-md transition-all duration-300"
-        onClick={resetGame}
-      >
+      <button className="mt-6 px-6 py-3 bg-red-600 hover:bg-red-800 text-white rounded-lg text-lg font-semibold shadow-md transition-all duration-300" onClick={resetGame}>
         Restart Game
       </button>
     </div>
